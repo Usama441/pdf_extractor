@@ -1,0 +1,35 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PDF files & extracted output
+pdf/
+extracted_output/
+
+# Scratch/test files
+scratch_analyze.py
+test_out.txt
+test_all.py
+
+# Gemini
+.gemini/
