@@ -166,6 +166,9 @@ class App(QMainWindow):
                 'further details can also be found', 'refer to the fscs website',
                 'we charge', 'interest each day you', 'date range applicable',
                 'unlimited 0.00%', 'less than', 'interest rates', 'overdraft',
+                'united arab', 'emirates p.o box', 'digital stamp',
+                'does not require signature', 'description (incl. vat)',
+                'amount balance', 'ref. number',
             ]
             
             def is_skip_line(line):
