@@ -156,20 +156,42 @@ class App(QMainWindow):
                 'بحسلا', 'ةعيدولا', 'ديصرلا', 'باسحلا', 'ةدئافلا',
                 'ةرخأتملا', 'ةفاضملا', '.ةمهم', 'ينطولا', 'يزكرملا',
                 'تامولعم', 'فشكلا', 'رادصإلا',
+                'end of day', 'account balance', 'carried forward',
+                'is registered in england', 'prudential regulation authority',
+                'financial conduct authority', 'london fruit and wool exchange',
+                'fscs website', 'information sheet and exclusions',
+                'authorised by the', 'regulated by the', 'starling bank limited',
+                'duval square', 'e1 6pw', 'number 730166',
+                'list which are', 'available in the app and', 'on our website.',
+                'further details can also be found', 'refer to the fscs website',
+                'we charge', 'interest each day you', 'date range applicable',
+                'unlimited 0.00%', 'less than', 'interest rates', 'overdraft',
             ]
             
             def is_skip_line(line):
-                lower = line.lower()
+                lower = line.lower().strip()
+                if not lower:
+                    return True
+                
+                # 1. Skip if any keyword matches
                 for kw in skip_keywords:
                     if kw in lower:
                         return True
-                ascii_chars = sum(1 for c in line if ord(c) < 128 and c.isalpha())
-                has_digits = any(c.isdigit() for c in line)
-                if ascii_chars == 0 and len(line) > 5 and not has_digits:
+                
+                # 2. Skip ANY line containing Arabic characters (not used for data)
+                if any('\u0600' <= c <= '\u06FF' for c in line):
                     return True
-                # Skip "page1 of4", "page 2 of 4" etc.
-                if re.match(r'^page\s*\d+\s*of\s*\d+$', lower.strip()):
+                
+                # 3. Skip page numbers (e.g., "page 1 of 4", "page1")
+                if re.search(r'page\s*\d+', lower):
                     return True
+                
+                # 4. Skip lines that have no English letters and no digits (junk punctuation)
+                letters = sum(1 for c in lower if 'a' <= c <= 'z')
+                digits = sum(1 for c in lower if '0' <= c <= '9')
+                if letters == 0 and digits == 0 and len(lower) > 2:
+                    return True
+                    
                 return False
             
             # Step 1: Extract text and find header line
@@ -210,6 +232,8 @@ class App(QMainWindow):
                 'reference number': 'Reference Number',
                 'account balance': 'Account Balance',
                 'ref. number': 'Ref. Number',
+                'payments in': 'Payments In',
+                'payments out': 'Payments Out',
             }
             
             with pdfplumber.open(pdf_path) as pdf:
@@ -338,6 +362,28 @@ class App(QMainWindow):
                         continue
                     if not any(cell.strip() for cell in row):
                         continue
+                    
+                    # Cleanup: If numeric columns (In/Out/Balance/Debit/Credit) contain text with letters, 
+                    # move it to the description/transaction column
+                    num_col_indices = []
+                    desc_col_idx = -1
+                    for ci, name in enumerate(col_names):
+                        lname = name.lower()
+                        if any(kw in lname for kw in ['in', 'out', 'balance', 'debit', 'credit', 'amount']):
+                            num_col_indices.append(ci)
+                        if any(kw in lname for kw in ['transaction', 'description', 'details']):
+                            desc_col_idx = ci
+                    
+                    if desc_col_idx != -1:
+                        for nci in num_col_indices:
+                            val = row[nci].strip()
+                            # If it contains letters (not just currency symbols), it's probably description spillover
+                            if any('a' <= c.lower() <= 'z' for c in val):
+                                if row[desc_col_idx]:
+                                    row[desc_col_idx] += ' ' + val
+                                else:
+                                    row[desc_col_idx] = val
+                                row[nci] = ''
                     
                     raw_rows.append(row)
             
