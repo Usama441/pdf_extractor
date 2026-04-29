@@ -1,4 +1,5 @@
 pdfplumber
 pandas
-customtkinter
 openpyxl
+PySide6
+pyinstaller

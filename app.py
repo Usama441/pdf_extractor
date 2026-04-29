@@ -2,6 +2,7 @@ import sys
 import os
 import pdfplumber
 import pandas as pd
+from version import APP_NAME
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLabel, QTextEdit, QFileDialog, QMessageBox,
@@ -12,7 +13,7 @@ from PySide6.QtCore import Qt
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Bank Statement Extractor")
+        self.setWindowTitle(APP_NAME)
         self.resize(700, 500)
 
         # Central widget and layout
@@ -25,7 +26,7 @@ class App(QMainWindow):
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar.setFixedWidth(200)
 
-        self.logo_label = QLabel("PDF Extractor")
+        self.logo_label = QLabel(APP_NAME)
         self.logo_label.setAlignment(Qt.AlignCenter)
         self.logo_label.setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 20px;")
         sidebar_layout.addWidget(self.logo_label)
