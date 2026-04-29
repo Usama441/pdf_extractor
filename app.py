@@ -127,7 +127,7 @@ class App(QMainWindow):
         try:
             import re
             
-            date_pattern = re.compile(r'(\d{2}[-/]\w{3}[-/]\d{2,4}|\d{2}[-/]\d{2}[-/]\d{2,4}|\d{4}[-/]\d{2}[-/]\d{2})')
+            date_pattern = re.compile(r'(\d{2}[-/]\w{3}[-/]\d{2,4}|\d{2}[-/]\d{2}[-/]\d{2,4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[A-Za-z]{3}\d{2,4})')
             
             skip_keywords = [
                 'your bank statement', 'account summary', 'opening balance',
@@ -168,7 +168,20 @@ class App(QMainWindow):
                 'unlimited 0.00%', 'less than', 'interest rates', 'overdraft',
                 'united arab', 'emirates p.o box', 'digital stamp',
                 'does not require signature', 'description (incl. vat)',
-                'amount balance', 'ref. number',
+                'amount balance', 'ref. number', 'tax registration number',
+                'brought forward', 'carried forward', 'need help?',
+                'following channels', 'personal banking', 'business banking',
+                'private banking', 'dedicated relationship', 'online banking',
+                'future reference', 'dispute resolution', 'sanadak.ae',
+                'centralbank.ae', 'complaint with the bank', 'contact us',
+                'customer service', 'registered details:', 'paid up capital',
+                'commercial registration', 'head office:', 'p.j.s.c',
+                'licensed by the central bank', 'emirates nbd bank',
+                'phone banking:', 'email at', 'complaint-process',
+                'customersupport@', 'www.emiratesnbd.com', 'visiting any',
+                'nbd branch', 'emirates nbd branch', '800 54', '800456',
+                'p.o. box', 'uae', 'date description', 'debits credits',
+                'credits balance', 'description debits',
             ]
             
             def is_skip_line(line):
@@ -195,6 +208,14 @@ class App(QMainWindow):
                 if letters == 0 and digits == 0 and len(lower) > 2:
                     return True
                     
+                # 5. Skip if it looks like a phone number or URL
+                if re.search(r'\(\+\d+\)|\d{3}-\d{4}|www\.|http', lower):
+                    return True
+                
+                # 6. Skip if the line is JUST a header word (like "Date")
+                if lower in ['date', 'description', 'debits', 'credits', 'balance']:
+                    return True
+                    
                 return False
             
             # Step 1: Extract text and find header line
@@ -213,7 +234,7 @@ class App(QMainWindow):
                 return
             
             header_kws_detect = ['date', 'description', 'balance', 'amount', 'withdrawal', 
-                                 'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference']
+                                 'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference', 'debits', 'credits']
             header_line = None
             for i, line in enumerate(all_lines):
                 lower = line.lower().strip()
@@ -311,11 +332,23 @@ class App(QMainWindow):
                 
                 col_names = [c['text'] for c in merged_cols]
                 
-                # Build column boundaries (midpoints between adjacent columns)
+                # Build column boundaries (bias towards the end of the current column to avoid wide gaps absorbing next column data)
                 col_ranges = []
                 for ci, col in enumerate(merged_cols):
-                    x_start = 0 if ci == 0 else (merged_cols[ci - 1]['x1'] + col['x0']) / 2
-                    x_end = 9999 if ci == len(merged_cols) - 1 else (col['x1'] + merged_cols[ci + 1]['x0']) / 2
+                    if ci == 0:
+                        x_start = 0
+                    else:
+                        # Start of this column is influenced by the previous column's end
+                        prev_col = merged_cols[ci - 1]
+                        x_start = prev_col['x1'] + (col['x0'] - prev_col['x1']) * 0.2
+                    
+                    if ci == len(merged_cols) - 1:
+                        x_end = 9999
+                    else:
+                        # End of this column is influenced by the next column's start
+                        next_col = merged_cols[ci + 1]
+                        x_end = col['x1'] + (next_col['x0'] - col['x1']) * 0.2
+                    
                     col_ranges.append((x_start, x_end))
                 
                 self.log(f"  -> Detected columns: {col_names}")
@@ -380,8 +413,9 @@ class App(QMainWindow):
                     if desc_col_idx != -1:
                         for nci in num_col_indices:
                             val = row[nci].strip()
-                            # If it contains letters (not just currency symbols), it's probably description spillover
-                            if any('a' <= c.lower() <= 'z' for c in val):
+                            # If it contains letters (not just currency symbols or Cr/Dr), it's probably description spillover
+                            clean_val = val.lower().replace('cr', '').replace('dr', '').replace('aed', '').replace('usd', '').strip()
+                            if any('a' <= c <= 'z' for c in clean_val):
                                 if row[desc_col_idx]:
                                     row[desc_col_idx] += ' ' + val
                                 else:
