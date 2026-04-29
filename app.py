@@ -161,7 +161,11 @@ class App(QMainWindow):
         try:
             import re
             
-            date_pattern = re.compile(r'(\d{2}[-/]\w{3}[-/]\d{2,4}|\d{2}[-/]\d{2}[-/]\d{2,4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[A-Za-z]{3}\d{2,4})')
+            # Support multiple date formats:
+            # 1. 01-01-2025 or 01/01/25
+            # 2. 04JUN25 (Emirates NBD)
+            # 3. 30 Apr, 2025 (Wio)
+            date_pattern = re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[A-Z]{3}\d{2}|\d{1,2}\s+[A-Za-z]{3},\s+\d{4}')
             
             skip_keywords = [
                 'your bank statement', 'account summary', 'opening balance',
@@ -270,7 +274,7 @@ class App(QMainWindow):
             
             header_kws_detect = ['date', 'description', 'balance', 'amount', 'withdrawal', 
                                  'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference', 
-                                 'debits', 'credits', 'value date', 'chq/ref']
+                                 'debits', 'credits', 'value date', 'chq/ref', 'currency']
             header_line = None
             for i, line in enumerate(all_lines):
                 lower = line.lower().strip()
@@ -297,6 +301,7 @@ class App(QMainWindow):
                 'value date': 'Value Date',
                 'chq/ref no.': 'Chq/Ref No.',
                 'chq/ref': 'Chq/Ref No.',
+                'running balance': 'Running Balance',
             }
             
             with pdfplumber.open(pdf_path, password=password) as pdf:
@@ -330,7 +335,7 @@ class App(QMainWindow):
                                 if abs(adj_y - y_key) <= 12:  # Within ~12 px
                                     for w in y_groups[adj_y]:
                                         wt = w['text'].lower()
-                                        if wt in header_kws_detect or wt in ('in', 'out', 'number', 'cheque', 'ref.', 'reference', 'account', 'no.', 'value'):
+                                        if wt in header_kws_detect or wt in ('in', 'out', 'number', 'cheque', 'ref.', 'reference', 'account', 'no.', 'value', 'running'):
                                             header_words_found.append(w)
                                     # Update header_top to the latest line if it's after
                                     if adj_y > y_key:
@@ -477,10 +482,26 @@ class App(QMainWindow):
             
             # Step 5: Merge multi-line transactions
             # A new transaction starts when the Date column has a date
+            self.log(f"  -> Total raw rows after filtering: {len(raw_rows)}")
+            if raw_rows:
+                self.log(f"  -> First raw row: {raw_rows[0]}")
+                
             transactions = []
             current_txn = None
             
             for row in raw_rows:
+                # Fix for split dates (e.g., "30 Apr," in col 0 and "2025 ..." in col 1)
+                if len(row) > 1:
+                    combined = (row[0] + ' ' + row[1]).strip()
+                    match = date_pattern.search(combined)
+                    # If the combined text starts with a date that wasn't in row[0] alone
+                    if match and not date_pattern.search(row[0]):
+                        full_date = match.group(0)
+                        # Move the date part to row[0] and keep the rest in row[1]
+                        remainder = combined[match.end():].strip()
+                        row[0] = full_date
+                        row[1] = remainder
+                
                 has_date = date_pattern.search(row[0]) if row[0] else False
                 
                 if has_date:
@@ -493,6 +514,8 @@ class App(QMainWindow):
             
             if current_txn:
                 transactions.append(current_txn)
+                
+            self.log(f"  -> Transactions grouped: {len(transactions)}")
             
             if not transactions:
                 self.log(f"  -> No transactions found in {pdf_file}.")
