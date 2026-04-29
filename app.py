@@ -4,7 +4,8 @@ import pdfplumber
 import pandas as pd
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QLabel, QTextEdit, QFileDialog, QMessageBox
+    QPushButton, QLabel, QTextEdit, QFileDialog, QMessageBox,
+    QInputDialog, QLineEdit
 )
 from PySide6.QtCore import Qt
 
@@ -92,6 +93,39 @@ class App(QMainWindow):
         pdf_file = os.path.basename(self.pdf_file)
         pdf_path = self.pdf_file
         self.log(f"Processing {pdf_file}...")
+        
+        password = None
+        # Check if PDF is encrypted and ask for password if needed
+        try:
+            with pdfplumber.open(pdf_path) as test_pdf:
+                pass
+        except Exception as e:
+            error_msg = str(e).lower()
+            error_type = type(e).__name__.lower()
+            # If the error message or error type contains any hint of encryption or pdfminer issues
+            if any(kw in error_msg for kw in ["password", "authenticate", "pdfminer", "encrypted"]) or \
+               any(kw in error_type for kw in ["password", "pdfminer", "crypt"]):
+                while True:
+                    text, ok = QInputDialog.getText(
+                        self, "Password Required", 
+                        f"The file '{pdf_file}' is password protected.\nPlease enter the password:",
+                        QLineEdit.Password
+                    )
+                    if ok:
+                        try:
+                            with pdfplumber.open(pdf_path, password=text) as test_pdf:
+                                password = text
+                                break
+                        except:
+                            QMessageBox.warning(self, "Error", "Incorrect password. Please try again.")
+                    else:
+                        self.log("Extraction cancelled (password not provided).")
+                        self.extract_btn.setEnabled(True)
+                        self.select_file_btn.setEnabled(True)
+                        return
+            else:
+                self.log(f"  -> Info: PDF check failed with {type(e).__name__}: {str(e)}")
+                # Continue anyway, it might be a different issue caught later
         
         def save_styled_excel(dataframe, path):
             with pd.ExcelWriter(path, engine='openpyxl') as writer:
@@ -181,7 +215,8 @@ class App(QMainWindow):
                 'customersupport@', 'www.emiratesnbd.com', 'visiting any',
                 'nbd branch', 'emirates nbd branch', '800 54', '800456',
                 'p.o. box', 'uae', 'date description', 'debits credits',
-                'credits balance', 'description debits',
+                'credits balance', 'description debits', 'end of statement',
+                'total debits', 'total credits', 'total amount', 'total',
             ]
             
             def is_skip_line(line):
@@ -212,15 +247,15 @@ class App(QMainWindow):
                 if re.search(r'\(\+\d+\)|\d{3}-\d{4}|www\.|http', lower):
                     return True
                 
-                # 6. Skip if the line is JUST a header word (like "Date")
-                if lower in ['date', 'description', 'debits', 'credits', 'balance']:
+                # 6. Skip if the line is JUST a header word or common footer word
+                if lower in ['date', 'description', 'debits', 'credits', 'balance', 'total']:
                     return True
                     
                 return False
             
             # Step 1: Extract text and find header line
             all_lines = []
-            with pdfplumber.open(pdf_path) as pdf:
+            with pdfplumber.open(pdf_path, password=password) as pdf:
                 for page in pdf.pages:
                     text = page.extract_text()
                     if text:
@@ -234,7 +269,8 @@ class App(QMainWindow):
                 return
             
             header_kws_detect = ['date', 'description', 'balance', 'amount', 'withdrawal', 
-                                 'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference', 'debits', 'credits']
+                                 'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference', 
+                                 'debits', 'credits', 'value date', 'chq/ref']
             header_line = None
             for i, line in enumerate(all_lines):
                 lower = line.lower().strip()
@@ -258,9 +294,12 @@ class App(QMainWindow):
                 'ref. number': 'Ref. Number',
                 'payments in': 'Payments In',
                 'payments out': 'Payments Out',
+                'value date': 'Value Date',
+                'chq/ref no.': 'Chq/Ref No.',
+                'chq/ref': 'Chq/Ref No.',
             }
             
-            with pdfplumber.open(pdf_path) as pdf:
+            with pdfplumber.open(pdf_path, password=password) as pdf:
                 # Find header words on the page
                 header_words_found = []
                 header_top = None
@@ -291,7 +330,7 @@ class App(QMainWindow):
                                 if abs(adj_y - y_key) <= 12:  # Within ~12 px
                                     for w in y_groups[adj_y]:
                                         wt = w['text'].lower()
-                                        if wt in header_kws_detect or wt in ('in', 'out', 'number', 'cheque', 'ref.', 'reference', 'account'):
+                                        if wt in header_kws_detect or wt in ('in', 'out', 'number', 'cheque', 'ref.', 'reference', 'account', 'no.', 'value'):
                                             header_words_found.append(w)
                                     # Update header_top to the latest line if it's after
                                     if adj_y > y_key:
@@ -317,6 +356,18 @@ class App(QMainWindow):
                     if any(ord(c) > 127 for c in w['text']):
                         i += 1
                         continue
+                        
+                    # Try 3-word match
+                    if i + 2 < len(header_words_found):
+                        nw1 = header_words_found[i + 1]
+                        nw2 = header_words_found[i + 2]
+                        three = (w['text'] + ' ' + nw1['text'] + ' ' + nw2['text']).lower()
+                        if three in known_multi_word:
+                            merged_cols.append({'text': known_multi_word[three], 'x0': w['x0'], 'x1': nw2['x1']})
+                            i += 3
+                            continue
+                            
+                    # Try 2-word match
                     if i + 1 < len(header_words_found):
                         nw = header_words_found[i + 1]
                         two = (w['text'] + ' ' + nw['text']).lower()
