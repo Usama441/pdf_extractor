@@ -165,8 +165,8 @@ class App(QMainWindow):
             # Support multiple date formats:
             # 1. 01-01-2025 or 01/01/25
             # 2. 04JUN25 (Emirates NBD)
-            # 3. 30 Apr, 2025 (Wio)
-            date_pattern = re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[A-Z]{3}\d{2}|\d{1,2}\s+[A-Za-z]{3},\s+\d{4}')
+            # 3. 30 Apr, 2025 (Payoneer) or 30 Mar 2026 (Starling)
+            date_pattern = re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[A-Z]{3}\d{2}|\d{1,2}\s+[A-Za-z]{3},?\s+\d{4}')
             
             skip_keywords = [
                 'your bank statement', 'account summary', 'opening balance',
@@ -222,6 +222,9 @@ class App(QMainWindow):
                 'p.o. box', 'uae', 'date description', 'debits credits',
                 'credits balance', 'description debits', 'end of statement',
                 'total debits', 'total credits', 'total amount', 'total',
+                'generated on', 'filters and search applied', 'transaction statement',
+                'report lost or', 'scan the qr code', 'revolut ltd', 'transfer of funds',
+                'regulations 2017', 'information on the payer', 'accounts:',
             ]
             
             def is_skip_line(line):
@@ -248,8 +251,8 @@ class App(QMainWindow):
                 if letters == 0 and digits == 0 and len(lower) > 2:
                     return True
                     
-                # 5. Skip if it looks like a phone number or URL
-                if re.search(r'\(\+\d+\)|\d{3}-\d{4}|www\.|http', lower):
+                # 5. Skip if it looks like a phone number, URL, or common footer pattern
+                if re.search(r'\+\d+|\d{3}-\d{4}|\d{4}\s\d{4}|www\.|http', lower):
                     return True
                 
                 # 6. Skip if the line is JUST a header word or common footer word
@@ -275,7 +278,7 @@ class App(QMainWindow):
             
             header_kws_detect = ['date', 'description', 'balance', 'amount', 'withdrawal', 
                                  'deposit', 'credit', 'debit', 'transaction', 'type', 'ref.', 'reference', 
-                                 'debits', 'credits', 'value date', 'chq/ref', 'currency']
+                                 'debits', 'credits', 'value date', 'chq/ref', 'currency', 'money out', 'money in', 'status']
             header_line = None
             for i, line in enumerate(all_lines):
                 lower = line.lower().strip()
@@ -283,11 +286,12 @@ class App(QMainWindow):
                     continue
                 matches = sum(1 for kw in header_kws_detect if kw in lower)
                 if matches >= 2:
+                    self.log(f"  -> Found potential header line: '{line.strip()}' with {matches} matches")
                     header_line = line.strip()
                     break
             
             if not header_line:
-                self.log(f"  -> Could not detect table header in {pdf_file}.")
+                self.log(f"  -> Could not detect table header in {pdf_file}. Check if keywords match.")
                 self.extract_btn.setEnabled(True)
                 self.select_file_btn.setEnabled(True)
                 return
@@ -303,6 +307,9 @@ class App(QMainWindow):
                 'chq/ref no.': 'Chq/Ref No.',
                 'chq/ref': 'Chq/Ref No.',
                 'running balance': 'Running Balance',
+                'money out': 'Money Out',
+                'money in': 'Money In',
+                'date (utc)': 'Date',
             }
             
             with pdfplumber.open(pdf_path, password=password) as pdf:
@@ -341,12 +348,13 @@ class App(QMainWindow):
                                     # Update header_top to the latest line if it's after
                                     if adj_y > y_key:
                                         header_top = max(header_top, max(w['top'] for w in y_groups[adj_y]))
+                            self.log(f"  -> Header words found: {[w['text'] for w in header_words_found]}")
                             break
                     if header_words_found:
                         break
                 
                 if not header_words_found:
-                    self.log(f"  -> Could not locate header positions in {pdf_file}.")
+                    self.log(f"  -> Could not locate header positions in {pdf_file}. Words on page might not match keywords.")
                     self.extract_btn.setEnabled(True)
                     self.select_file_btn.setEnabled(True)
                     return
@@ -404,7 +412,14 @@ class App(QMainWindow):
                     else:
                         # End of this column is influenced by the next column's start
                         next_col = merged_cols[ci + 1]
-                        x_end = col['x1'] + (next_col['x0'] - col['x1']) * 0.2
+                        # Give more room to columns that tend to have long data
+                        bias = 0.5
+                        if col['text'].lower() in ('date', 'description'):
+                            bias = 0.8 # Large bias to allow long dates/descriptions
+                        elif col['text'].lower() in ('status', 'account'):
+                            bias = 0.2 # Tighter bias for narrow columns
+                            
+                        x_end = col['x1'] + (next_col['x0'] - col['x1']) * bias
                     
                     col_ranges.append((x_start, x_end))
                 
@@ -483,25 +498,26 @@ class App(QMainWindow):
             
             # Step 5: Merge multi-line transactions
             # A new transaction starts when the Date column has a date
-            self.log(f"  -> Total raw rows after filtering: {len(raw_rows)}")
-            if raw_rows:
-                self.log(f"  -> First raw row: {raw_rows[0]}")
-                
             transactions = []
             current_txn = None
             
             for row in raw_rows:
-                # Fix for split dates (e.g., "30 Apr," in col 0 and "2025 ..." in col 1)
+                # Fix for split dates or extra text in Date column
                 if len(row) > 1:
                     combined = (row[0] + ' ' + row[1]).strip()
                     match = date_pattern.search(combined)
-                    # If the combined text starts with a date that wasn't in row[0] alone
-                    if match and not date_pattern.search(row[0]):
+                    if match:
                         full_date = match.group(0)
-                        # Move the date part to row[0] and keep the rest in row[1]
-                        remainder = combined[match.end():].strip()
+                        # The text before the date (if any) and after the date
+                        # Usually, date is at the start, so we just want the date in row[0]
+                        # and everything else in row[1]
+                        entire_text = combined
+                        date_start = match.start()
+                        date_end = match.end()
+                        
                         row[0] = full_date
-                        row[1] = remainder
+                        # The remainder is everything except the date itself
+                        row[1] = (entire_text[:date_start] + ' ' + entire_text[date_end:]).strip()
                 
                 has_date = date_pattern.search(row[0]) if row[0] else False
                 
@@ -515,8 +531,6 @@ class App(QMainWindow):
             
             if current_txn:
                 transactions.append(current_txn)
-                
-            self.log(f"  -> Transactions grouped: {len(transactions)}")
             
             if not transactions:
                 self.log(f"  -> No transactions found in {pdf_file}.")
