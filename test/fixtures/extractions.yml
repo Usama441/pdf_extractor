@@ -1,0 +1,21 @@
+completed_one:
+  user: alice
+  status: completed
+  original_filename: statement.pdf
+  error_message:
+  columns:
+    - Date
+    - Description
+  rows:
+    - - 01JAN25
+      - Opening transaction
+  transaction_count: 1
+
+password_retry:
+  user: alice
+  status: password_required
+  original_filename: locked.pdf
+  error_message: The uploaded PDF is password protected. Provide a valid password and retry.
+  columns: []
+  rows: []
+  transaction_count: 0

@@ -1,0 +1,82 @@
+x-app-environment: &app_environment
+  APP_HOST: ${APP_HOST}
+  APP_PROTOCOL: ${APP_PROTOCOL}
+  POSTGRES_CABLE_DB: ${POSTGRES_CABLE_DB}
+  POSTGRES_CACHE_DB: ${POSTGRES_CACHE_DB}
+  POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_HOST: ${POSTGRES_HOST}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  POSTGRES_PORT: ${POSTGRES_PORT}
+  POSTGRES_EXPOSE_PORT: ${POSTGRES_EXPOSE_PORT}
+  POSTGRES_QUEUE_DB: ${POSTGRES_QUEUE_DB}
+  POSTGRES_USER: ${POSTGRES_USER}
+  PYTHON_EXTRACTOR_BIN: ${PYTHON_EXTRACTOR_BIN}
+  RAILS_ALLOWED_HOSTS: ${RAILS_ALLOWED_HOSTS}
+  RAILS_ASSUME_SSL: ${RAILS_ASSUME_SSL}
+  RAILS_ENV: ${RAILS_ENV}
+  RAILS_FORCE_SSL: ${RAILS_FORCE_SSL}
+  RAILS_LOG_LEVEL: ${RAILS_LOG_LEVEL}
+  RAILS_MAX_THREADS: ${RAILS_MAX_THREADS}
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_EXPOSE_PORT}:5432"
+    volumes:
+      - postgres_production_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *app_environment
+      RUN_DB_PREPARE: "true"
+    ports:
+      - "${APP_PORT}:3000"
+    volumes:
+      - rails_production_storage:/rails/storage
+      - rails_production_tmp:/rails/tmp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/up || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    environment:
+      <<: *app_environment
+    command: ["bin/jobs", "start"]
+    volumes:
+      - rails_production_storage:/rails/storage
+      - rails_production_tmp:/rails/tmp
+
+volumes:
+  postgres_production_data:
+  rails_production_storage:
+  rails_production_tmp:

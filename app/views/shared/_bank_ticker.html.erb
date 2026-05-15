@@ -1,0 +1,11 @@
+<div class="bank-ticker" aria-label="Supported banks">
+  <div class="bank-ticker__track">
+    <% 2.times do %>
+      <% supported_bank_logos.each do |bank| %>
+        <div class="bank-ticker__item bank-ticker__item--<%= bank[:size] %>">
+          <%= image_tag bank[:file], alt: bank[:name], loading: "lazy" %>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+</div>

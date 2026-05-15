@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_EXPOSE_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      RUN_DB_PREPARE: "true"
+    command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]
+    ports:
+      - "${APP_PORT}:3000"
+    volumes:
+      - .:/rails
+      - bundle_data:/usr/local/bundle
+      - rails_storage:/rails/storage
+      - rails_tmp:/rails/tmp
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    env_file:
+      - .env
+    command: ["bin/jobs", "start"]
+    volumes:
+      - .:/rails
+      - bundle_data:/usr/local/bundle
+      - rails_storage:/rails/storage
+      - rails_tmp:/rails/tmp
+
+volumes:
+  postgres_data:
+  bundle_data:
+  rails_storage:
+  rails_tmp:

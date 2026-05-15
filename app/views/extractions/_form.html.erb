@@ -1,0 +1,41 @@
+<%= form_with model: extraction, url: extractions_path, class: "stack-form", data: { controller: "upload" } do |form| %>
+  <div
+    class="upload-dropzone"
+    data-upload-target="dropzone"
+    data-action="dragenter->upload#dragEnter dragover->upload#dragOver dragleave->upload#dragLeave drop->upload#drop"
+  >
+    <p class="eyebrow">PDF input</p>
+    <h2>Select a statement file</h2>
+    <p class="upload-copy" data-upload-target="prompt">Drag a PDF here or browse from your computer.</p>
+
+    <label class="button button--dark" data-upload-target="button">
+      Choose PDF
+      <%= form.file_field :source_pdf,
+        accept: "application/pdf",
+        class: "sr-only",
+        data: { upload_target: "input", action: "change->upload#choose" } %>
+    </label>
+
+    <div class="upload-selected" data-upload-target="selected" hidden>
+      <span class="upload-filename" data-upload-target="name"></span>
+      <button type="button" class="upload-remove" data-action="upload#clear" aria-label="Remove selected PDF">x</button>
+    </div>
+
+    <div class="upload-analysis" data-upload-target="analysis" hidden>
+      <span class="upload-fluid"></span>
+      <span data-upload-target="analysisText">Analyzing PDF protection...</span>
+    </div>
+
+    <p class="upload-error" data-upload-target="error"></p>
+  </div>
+
+  <div class="field upload-password-field" data-upload-target="passwordField" hidden>
+    <%= form.label :password, "PDF password (optional)" %>
+    <%= form.password_field :password, autocomplete: "off", placeholder: "Only needed for encrypted files" %>
+  </div>
+
+  <div class="button-row">
+    <%= form.submit "Queue extraction", class: "button button--dark" %>
+    <%= link_to "Back to dashboard", dashboard_path, class: "button button--ghost" %>
+  </div>
+<% end %>

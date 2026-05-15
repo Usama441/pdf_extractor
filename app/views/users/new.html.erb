@@ -1,0 +1,41 @@
+<% content_for :title, "Create Account" %>
+
+<section class="auth-shell">
+  <div class="auth-panel">
+    <p class="eyebrow">Rails + Python workspace</p>
+    <h1>Create your extraction account</h1>
+    <p class="lede">
+      Upload password-protected or plain bank statements, track processing in the background,
+      preview extracted rows, and download Excel exports when they are ready.
+    </p>
+    <%= render "shared/bank_ticker" %>
+  </div>
+
+  <div class="auth-card">
+    <%= render "shared/errors", resource: @user %>
+
+    <%= form_with model: @user, url: signup_path, class: "stack-form" do |form| %>
+      <div class="field">
+        <%= form.label :email %>
+        <%= form.email_field :email, autofocus: true, autocomplete: "email", placeholder: "you@example.com" %>
+      </div>
+
+      <div class="field">
+        <%= form.label :password %>
+        <%= form.password_field :password, autocomplete: "new-password", placeholder: "At least 8 characters" %>
+      </div>
+
+      <div class="field">
+        <%= form.label :password_confirmation, "Confirm password" %>
+        <%= form.password_field :password_confirmation, autocomplete: "new-password" %>
+      </div>
+
+      <%= form.submit "Create account", class: "button button--dark button--block" %>
+    <% end %>
+
+    <p class="auth-footnote">
+      Already have an account?
+      <%= link_to "Sign in", login_path %>
+    </p>
+  </div>
+</section>

@@ -1,0 +1,72 @@
+<% content_for :title, "Dashboard" %>
+<%= turbo_stream_from signed_in? ? [current_user, :extractions] : [guest_token, :extractions] %>
+
+<section class="hero-card">
+  <div>
+    <p class="eyebrow">Document workflow</p>
+    <h1>Extract bank statement PDFs</h1>
+    <p class="lede">
+      Upload a bank statement, let the Python extractor process it in the background,
+      then preview the rows and download Excel. Login is optional if you want saved history.
+    </p>
+  </div>
+
+  <div class="hero-card__actions">
+    <% unless signed_in? %>
+      <%= link_to "Login", login_path, class: "button button--ghost" %>
+    <% end %>
+  </div>
+</section>
+
+<section class="section-grid">
+  <article class="panel-card">
+    <%= render "extractions/form", extraction: @extraction %>
+  </article>
+
+  <article class="panel-card panel-card--accent">
+    <p class="eyebrow">Workflow snapshot</p>
+    <h2>How it works</h2>
+    <ol class="ordered-steps">
+      <li>Upload a PDF statement and optionally provide a password.</li>
+      <li>A background job runs the Python extractor without blocking the UI.</li>
+      <li>When parsing completes, you get a preview table and an XLSX download.</li>
+    </ol>
+    <%= render "shared/bank_ticker" %>
+  </article>
+</section>
+
+<% if signed_in? %>
+  <section class="panel-card">
+    <div class="panel-card__header">
+      <div>
+        <p class="eyebrow">Recent activity</p>
+        <h2>Extraction history</h2>
+      </div>
+      <span class="metric-pill"><%= pluralize(@extractions.count, "job") %></span>
+    </div>
+
+    <% if @extractions.any? %>
+      <div class="job-list">
+        <% @extractions.each do |extraction| %>
+          <%= link_to extraction_path(extraction), class: "job-row" do %>
+            <div>
+              <strong><%= extraction.original_filename %></strong>
+              <p>
+                Created <%= time_ago_in_words(extraction.created_at) %> ago
+                <% if extraction.completed? %>
+                  • <%= pluralize(extraction.transaction_count, "transaction") %>
+                <% end %>
+              </p>
+            </div>
+            <span class="<%= extraction_status_class(extraction) %>"><%= extraction_status_label(extraction) %></span>
+          <% end %>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="empty-state">
+        <h3>No extractions yet</h3>
+        <p>Your completed previews and Excel exports will appear here once you upload a PDF.</p>
+      </div>
+    <% end %>
+  </section>
+<% end %>

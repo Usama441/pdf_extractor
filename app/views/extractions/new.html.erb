@@ -1,0 +1,17 @@
+<% content_for :title, "New Extraction" %>
+
+<section class="hero-card hero-card--tight">
+  <div>
+    <p class="eyebrow">Upload workspace</p>
+    <h1>Start a new extraction</h1>
+    <p class="lede">
+      Upload one bank-statement PDF at a time. If the file is encrypted, you can provide the password now
+      or add it later if the extractor requests it.
+    </p>
+  </div>
+</section>
+
+<section class="panel-card">
+  <%= render "shared/errors", resource: @extraction %>
+  <%= render "form", extraction: @extraction %>
+</section>

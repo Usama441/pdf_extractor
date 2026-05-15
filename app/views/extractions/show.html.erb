@@ -1,0 +1,117 @@
+<% content_for :title, @extraction.original_filename %>
+<%= turbo_stream_from @extraction %>
+
+<section class="hero-card hero-card--tight">
+  <div>
+    <p class="eyebrow">Extraction detail</p>
+    <h1><%= @extraction.original_filename %></h1>
+    <p class="lede">
+      Created <%= @extraction.created_at.strftime("%b %-d, %Y at %H:%M") %>.
+      <% unless @extraction.terminal? %>
+        This page refreshes automatically while the background job runs.
+      <% end %>
+    </p>
+  </div>
+
+  <div class="hero-card__actions hero-card__actions--stack">
+    <span class="<%= extraction_status_class(@extraction) %>"><%= extraction_status_label(@extraction) %></span>
+    <% if @extraction.completed? %>
+      <%= link_to "Download XLSX", download_extraction_path(@extraction), class: "button button--dark" %>
+    <% end %>
+  </div>
+</section>
+
+<section class="section-grid">
+  <article class="panel-card">
+    <div class="panel-card__header">
+      <div>
+        <p class="eyebrow">Status</p>
+        <h2>Processing summary</h2>
+      </div>
+      <% if @extraction.completed? %>
+        <span class="metric-pill"><%= pluralize(@extraction.transaction_count, "transaction") %></span>
+      <% end %>
+    </div>
+
+    <% if @extraction.processing? || @extraction.queued? %>
+      <div class="callout callout--info">
+        <h3>Extraction in progress</h3>
+        <p>The Python backend is processing your statement. Keep this page open or come back from the dashboard.</p>
+      </div>
+    <% elsif @extraction.password_required? %>
+      <div class="callout callout--warning">
+        <h3>Password required</h3>
+        <p><%= @extraction.error_message.presence || "The uploaded PDF is encrypted or the provided password was invalid." %></p>
+      </div>
+
+      <%= form_with model: @extraction, url: password_extraction_path(@extraction), method: :patch, class: "inline-form" do |form| %>
+        <div class="field field--grow">
+          <%= form.label :password, "Retry with password" %>
+          <%= form.password_field :password, autocomplete: "off" %>
+        </div>
+        <%= form.submit "Retry extraction", class: "button button--dark" %>
+      <% end %>
+    <% elsif @extraction.failed? %>
+      <div class="callout callout--danger">
+        <h3>Extraction failed</h3>
+        <p><%= @extraction.error_message.presence || "The backend could not extract transactions from this statement." %></p>
+      </div>
+    <% elsif @extraction.completed? %>
+      <div class="callout callout--success">
+        <h3>Extraction complete</h3>
+        <p>The preview below is read-only. Download the XLSX file when you are ready.</p>
+      </div>
+    <% end %>
+  </article>
+
+  <article class="panel-card panel-card--accent">
+    <p class="eyebrow">Quick facts</p>
+    <h2>Result metadata</h2>
+    <dl class="meta-list">
+      <div>
+        <dt>Source file</dt>
+        <dd><%= @extraction.original_filename %></dd>
+      </div>
+      <div>
+        <dt>Rows detected</dt>
+        <dd><%= @extraction.transaction_count %></dd>
+      </div>
+      <div>
+        <dt>Columns detected</dt>
+        <dd><%= @extraction.columns.size %></dd>
+      </div>
+    </dl>
+  </article>
+</section>
+
+<% if @extraction.completed? && @extraction.columns.any? %>
+  <section class="panel-card">
+    <div class="panel-card__header">
+      <div>
+        <p class="eyebrow">Preview</p>
+        <h2>Extracted transactions</h2>
+      </div>
+    </div>
+
+    <div class="table-shell">
+      <table class="preview-table">
+        <thead>
+          <tr>
+            <% @extraction.columns.each do |column| %>
+              <th><%= column %></th>
+            <% end %>
+          </tr>
+        </thead>
+        <tbody>
+          <% @extraction.rows.each do |row| %>
+            <tr>
+              <% row.each do |cell| %>
+                <td><%= simple_format(cell.to_s, {}, wrapper_tag: "span") %></td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+<% end %>

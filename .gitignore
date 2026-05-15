@@ -33,3 +33,22 @@ test_all.py
 
 # Gemini
 .gemini/
+
+# Environment files
+.env
+.env.production
+.env.local
+.env.*.local
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+
+# Rails
+/.bundle
+/log/*
+/tmp/*
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+/public/assets
+/vendor/bundle

@@ -1,0 +1,11 @@
+<% if notice.present? || alert.present? %>
+  <div class="flash-stack">
+    <% if notice.present? %>
+      <div class="flash flash--notice"><%= notice %></div>
+    <% end %>
+
+    <% if alert.present? %>
+      <div class="flash flash--alert"><%= alert %></div>
+    <% end %>
+  </div>
+<% end %>
