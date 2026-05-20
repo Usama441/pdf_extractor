@@ -21,8 +21,19 @@ class UnsupportedStatementError(ExtractionError):
 
 
 DATE_PATTERN = re.compile(
-    r"\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[A-Z]{3}\d{2}|\d{1,2}\s+[A-Za-z]{3},?\s+\d{4}"
+    r"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|"
+    r"\d{1,2}[A-Z]{3}\d{2}|\d{1,2}\s+[A-Za-z]{3},?\s+\d{4})\b"
 )
+
+REFERENCE_PATTERN = re.compile(
+    r"^(?:"
+    r"[A-Z0-9]{6,}"
+    r"|[A-Z0-9]{4,}\s+[A-Z0-9]{3,}"
+    r"|[A-Z]{2,}[-/]?[A-Z0-9]{4,}"
+    r")$"
+)
+
+AMOUNT_PATTERN = re.compile(r"^(?:[A-Z]{3}\s*)?[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:\s*(?:CR|DR))?$", re.I)
 
 HEADER_KEYWORDS = [
     "date",
@@ -443,11 +454,17 @@ def extract_rows(pdf, columns, column_ranges, header_page_idx, header_top):
             continue
 
         grouped_lines = group_words_by_line(words)
+        page_date_seen = page_idx == header_page_idx
         for y_key in sorted(grouped_lines.keys()):
             row = assign_words_to_columns(columns, column_ranges, grouped_lines[y_key])
             row_text = " ".join(row)
 
             if is_skip_line(row_text) or not any(cell.strip() for cell in row):
+                continue
+
+            if DATE_PATTERN.search(f"{row[0]} {row[1]}".strip()):
+                page_date_seen = True
+            elif page_idx > header_page_idx and not page_date_seen:
                 continue
 
             raw_rows.append(clean_numeric_spillover(columns, row))
@@ -476,6 +493,7 @@ def merge_transactions(raw_rows):
     current_transaction = None
 
     for row in raw_rows:
+        row = clean_reference_spillover(row)
         if len(row) > 1:
             combined = f"{row[0]} {row[1]}".strip()
             match = DATE_PATTERN.search(combined)
@@ -504,7 +522,61 @@ def merge_transactions(raw_rows):
                     combined_row[index] = f"{combined_row[index]}\n{cell.strip()}".strip()
         merged.append(combined_row)
 
-    return merged
+    return deduplicate_transactions(merged)
+
+
+def clean_reference_spillover(row):
+    if len(row) < 3:
+        return row
+
+    has_date = bool(DATE_PATTERN.search(row[0])) if row[0] else False
+    if has_date:
+        return row
+
+    reference = row[2].strip()
+    if not reference or is_reference_like(reference) or is_amount_like(reference):
+        return row
+
+    row = list(row)
+    row[1] = f"{row[1]} {reference}".strip()
+    row[2] = ""
+    return row
+
+
+def deduplicate_transactions(transactions):
+    deduplicated = []
+    seen = set()
+
+    for transaction in transactions:
+        signature = transaction_signature(transaction)
+        if signature in seen:
+            continue
+
+        seen.add(signature)
+        deduplicated.append(transaction)
+
+    return deduplicated
+
+
+def transaction_signature(transaction):
+    return tuple(normalize_signature_cell(cell) for cell in transaction)
+
+
+def normalize_signature_cell(value):
+    return re.sub(r"\s+", " ", str(value).strip().lower())
+
+
+def is_reference_like(value):
+    normalized = re.sub(r"\s+", " ", value.strip().upper())
+    if not normalized:
+        return False
+
+    return bool(REFERENCE_PATTERN.match(normalized))
+
+
+def is_amount_like(value):
+    normalized = value.strip().replace(",", "")
+    return bool(AMOUNT_PATTERN.match(normalized))
 
 
 def save_styled_excel(columns, transactions, excel_path):
